@@ -1,5 +1,7 @@
 # 部署、安装与配置
 
+入门使用方式是 ChatGPT Sites 加上海外服务器或能稳定连接外网的电脑，逐步说明见[使用指南](getting-started.md)。
+
 部署者需拥有 ChatGPT Sites 创建/发布及 MCP Events/Dot 使用权限，自行创建私有 Site、D1/R2 资源，并准备可持续出站访问腾讯和 ChatGPT HTTPS 的 Node.js 22.13+ 主机。微信账号需满足上游扫码接入条件。本项目不需要 OpenAI API key；与 Dot 的交互通过平台 MCP 工具和事件完成。
 
 项目使用部署者自己的云资源、主机及凭据。发布源码不提供托管服务，也不提供共享微信账号。Sites 和微信的接口可用性以部署时平台实际支持及账号权限为准。

@@ -15,7 +15,9 @@
 
 ## 开始使用
 
-部署者需要自行提供私有 ChatGPT Sites 项目、该项目的 D1/R2 资源和一台持续运行的 Node.js 主机。所有地址和访问凭据都由部署者配置；项目没有默认共享网关。
+使用方式是 **ChatGPT（GPT）Sites + 海外服务器，或一台能稳定连接外网的电脑**。Sites 托管网页、MCP 和数据；服务器或电脑持续运行微信接入程序。入门步骤和可复制的 GPT/Dot 指令见[使用指南](docs/getting-started.md)。
+
+部署者需要自行提供私有 ChatGPT Sites 项目、该项目的 D1/R2 资源和一台持续运行的 Node.js 主机。所有地址和访问凭据都由部署者配置。
 
 1. 按[部署说明](docs/deployment.md)配置并部署私有 Sites 项目，安装其插件。
 2. 所有者在 ChatGPT 调用 `wechat_bridge_status`，登记管理身份；网页本身不登记管理员。

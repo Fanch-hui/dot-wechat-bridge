@@ -7,7 +7,7 @@ export type ParticipantControl = ControlledParticipant;
 export type BindingControl = ControlledBinding;
 export type GatewayControl = GatewayControlState;
 export type ParticipantAuth = GatewayAuth & { participant_id: string };
-export type BridgePort = Pick<BridgeClient, "post" | "uploadAttachment">;
+export type BridgePort = Pick<BridgeClient, "post" | "uploadAttachment"> & Partial<Pick<BridgeClient, "downloadMedia" | "cacheMedia">>;
 export type IlinkPort = Pick<IlinkClient, "updates" | "send" | "getQr" | "qrStatus">;
 
 export function privatePath(directory: string, category: string, id: string, filename: string): string {

@@ -15,16 +15,19 @@ import { Attachments } from "./attachments.ts";
 import { Participants } from "./participants.ts";
 import { Bindings } from "./bindings.ts";
 import { messageView } from "./message-view.ts";
+import { OutgoingMediaStore, mediaDescription } from "./outgoing-media.ts";
+import type { ReplyJob } from "../shared/contracts.ts";
 
 export class Bridge {
   readonly db:Database; readonly vault:Vault; readonly sessions:Sessions; readonly messages:Messages;
   readonly outbound:Outbound; readonly queue:Queue; readonly gateway:GatewayControl; readonly subscriptions:Subscriptions; readonly wake:Wake;
-  readonly attachments:Attachments; readonly participants:Participants; readonly bindings:Bindings;
+  readonly media:OutgoingMediaStore; readonly attachments:Attachments; readonly participants:Participants; readonly bindings:Bindings;
   constructor(readonly env:Env) {
     const cfg=config(env);
     this.db=new Database(env.DB); this.vault=new Vault(env.DATA_KEY_B64);
     this.participants=new Participants(this.db); this.bindings=new Bindings(this.db,this.vault);
     this.attachments=new Attachments(this.db,env.MEDIA);
+    this.media=new OutgoingMediaStore(this.db,this.vault,env.MEDIA);
     this.sessions=new Sessions(this.db,this.vault,cfg); this.messages=new Messages(this.db,this.vault,this.sessions,this.attachments);
     this.outbound=new Outbound(this.db,this.vault);
     this.queue=new Queue(this.db,this.vault,cfg); this.gateway=new GatewayControl(this.db,cfg);
@@ -45,10 +48,10 @@ export class Bridge {
     const counts=await this.db.all<{status:string;count:number}>("SELECT status,count(*) AS count FROM messages GROUP BY status");
     const issues=await this.db.all<Job>(
       "SELECT * FROM jobs WHERE kind='reply' AND state IN ('failed','unknown') ORDER BY sequence LIMIT 20");
-    const gateway=await this.db.one<{status:string;lease_until:number}>("SELECT status,lease_until FROM gateway WHERE id='personal'");
+    const gateway=await this.db.one<{status:string;lease_until:number;protocol_version:number}>("SELECT status,lease_until,protocol_version FROM gateway WHERE id='personal'");
     const subscriptions=await this.db.all<{state:string;count:number}>("SELECT state,count(*) AS count FROM subscriptions GROUP BY state");
     return {participants,sessions:sessions.map(row=>({participant_id:row.participant_id,display_name:row.display_name,session_id:row.session_id,
-      state:row.state,lease_until:row.lease_until,wake_attempts:row.wake_attempts})),bound:!!await this.db.get("sender"),gateway:gateway??null,message_counts:counts,delivery_issues:issues.map(job=>({...delivery(job),participant_id:job.participant_id,
+      state:row.state,lease_until:row.lease_until,wake_attempts:row.wake_attempts})),bound:!!await this.db.get("sender"),gateway:gateway??null,media_send_ready:!!gateway && gateway.protocol_version>=3 && gateway.status==='ok' && gateway.lease_until>Date.now(),message_counts:counts,delivery_issues:issues.map(job=>({...delivery(job),participant_id:job.participant_id,
       display_name:participants.find(row=>row.participant_id===job.participant_id)?.display_name})),subscriptions,
       session:current?{participant_id:current.participant_id,display_name:current.display_name,session_id:current.session_id,state:current.state,lease_until:current.lease_until,
         wake_attempts:current.wake_attempts}:null};
@@ -69,8 +72,11 @@ export class Bridge {
     const jobs=await this.db.all<Job>(`SELECT j.* FROM jobs j WHERE j.kind='reply' AND j.participant_id=? AND (${linked} OR (?=1 AND j.id IN (
       SELECT id FROM jobs WHERE participant_id=? AND purpose='send' AND message_ids='[]' ORDER BY sequence DESC LIMIT ?))) ORDER BY j.sequence`,
       [participantId,...rows.map(r=>r.sequence),before===Number.MAX_SAFE_INTEGER?1:0,participantId,limit]);
-    const replies=await Promise.all(jobs.map(async job=>({...delivery(job),purpose:job.purpose,message_ids:JSON.parse(job.message_ids!),
-      text:(await this.vault.open<{text:string}>(job.payload_cipher)).text})));
+    const replies=await Promise.all(jobs.map(async job=>{
+      const payload=await this.vault.open<ReplyJob['payload']>(job.payload_cipher);
+      return {...delivery(job),purpose:job.purpose,message_ids:JSON.parse(job.message_ids!),text:payload.text,
+        ...(payload.media?{media:mediaDescription(payload.media)}:{})};
+    }));
     const participant=await this.participants.get(participantId);
     return {participant_id:participantId,display_name:participant.display_name,messages:rows.reverse().map(messageView),replies};
   }

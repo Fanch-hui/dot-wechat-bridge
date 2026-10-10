@@ -17,7 +17,7 @@ export default {
   async fetch(request:Request,env:Env):Promise<Response> {
     const url=new URL(request.url);
     try {
-      if(url.pathname==='/health') return Response.json({service:'dot-wechat-bridge',protocol:'2026-07-28',gateway_protocol:2,
+      if(url.pathname==='/health') return Response.json({service:'dot-wechat-bridge',protocol:'2026-07-28',gateway_protocol:3,
         configured:!!env.DB && !!env.BRIDGE_TOKEN && !!env.DATA_KEY_B64});
       if((url.pathname==='/' || url.pathname==='/admin') && request.method==='GET') {
         const bridge=new Bridge(env),identity=request.headers.get('oai-authenticated-user-id');
@@ -45,7 +45,10 @@ export default {
         requireValue(!origin || [url.origin,'https://chatgpt.com','https://chat.openai.com'].includes(origin),'origin_forbidden',403);
         return mcp(request,env,await json(request));
       }
-      if(url.pathname.startsWith('/gateway/')) return Response.json(await gateway(request,env,url.pathname),{headers});
+      if(url.pathname.startsWith('/gateway/')) {
+        const result=await gateway(request,env,url.pathname);
+        return result instanceof Response?result:Response.json(result,{headers});
+      }
       return Response.json({error:'route_not_found'},{status:404});
     } catch(error) {
       if(error instanceof BridgeError) return Response.json({error:error.code},{status:error.status,headers});

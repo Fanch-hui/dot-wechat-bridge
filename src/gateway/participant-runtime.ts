@@ -3,15 +3,19 @@ import { prepareInbound } from "./inbound.ts";
 import { IlinkError } from "./ilink.ts";
 import { Journal, type Credentials } from "./storage.ts";
 import { delay, type BridgePort, type IlinkPort, type ParticipantAuth } from "./multi-contracts.ts";
+import { executeMediaJob } from "./media-job.ts";
+import { OutboundMediaError } from "./outbound-media.ts";
 
 export class ParticipantRuntime {
   status: "ok" | "credential_expired" | "error" = "ok";
   private conflict = false;
+  private pollSignal?: AbortSignal;
   constructor(readonly id: string, readonly credentials: Credentials, private cursor: string,
     readonly journal: Journal, readonly ilink: IlinkPort, private readonly bridge: BridgePort,
     private readonly auth: () => ParticipantAuth, private readonly interval: number) {}
 
   async poll(signal: AbortSignal): Promise<void> {
+    this.pollSignal = signal;
     let failures = 0;
     while (!signal.aborted) {
       if (this.status === "credential_expired" || this.conflict) { await delay(this.interval, signal); continue; }
@@ -49,19 +53,28 @@ export class ParticipantRuntime {
     delete this.journal.data.pending;
     await this.journal.save();
   }
-  async send(job: ReplyJob, signal: AbortSignal): Promise<JobResult> {
+  async send(job: ReplyJob, signal: AbortSignal, markStarted: () => Promise<void> = async () => {}): Promise<JobResult> {
     const common = { job_id: job.id, claim_token: job.claim_token };
     if (this.expired()) return { ...common, outcome: "failed", error_code: "credential_expired", error_message: "微信凭据已过期，请重新扫码" };
+    let sending = !job.payload.media;
+    const combined = this.pollSignal ? AbortSignal.any([signal, this.pollSignal]) : signal;
     try {
       this.auth();
-      await this.ilink.send(job.payload, signal);
+      if (job.payload.media) {
+        await executeMediaJob(job, this.bridge, this.auth, combined, markStarted, (bytes, preparedSignal, beforeSend) =>
+          this.ilink.send(job.payload, preparedSignal, { mediaBytes: bytes, beforeSend: async () => {
+            await beforeSend(); sending = true;
+          } }));
+      } else await this.ilink.send(job.payload, combined);
       return { ...common, outcome: "delivered" };
     } catch (error) {
+      if (error instanceof OutboundMediaError) return { ...common, outcome: error.outcome, error_code: error.code, error_message: error.detail };
       if (error instanceof IlinkError) {
         if (error.code === "credential_expired") this.status = "credential_expired";
         return { ...common, outcome: error.outcome, error_code: error.code, error_message: error.detail };
       }
-      return { ...common, outcome: "unknown", error_code: "reply_interrupted", error_message: "发送被中断，结果未确认" };
+      return { ...common, outcome: sending ? "unknown" : "retryable", error_code: "reply_interrupted",
+        error_message: sending ? "发送被中断，结果未确认" : "附件准备中断，尚未发送" };
     }
   }
 }

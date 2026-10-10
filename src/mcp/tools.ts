@@ -43,6 +43,19 @@ export async function callTool(bridge:Bridge,name:string,args:Record<string,unkn
         const queued=await bridge.outbound.send(args.idempotency_key as string,args.text as string,now,participant.id);
         result=await bridge.replyStatus(queued.reply_id,(args.wait_ms??20_000) as number); break;
       }
+      case 'wechat_send_media': {
+        const sessionFields=['session_id','lease_token','message_ids'].filter(key=>args[key]!==undefined);
+        requireValue(sessionFields.length===0 || sessionFields.length===3,'media_session_fields_required',400);
+        const participant=sessionFields.length?
+          await bridge.sessions.authorize(sid,lease,now):await bridge.participants.resolve(args.participant_id as string|undefined);
+        const participantId='participant_id' in participant?participant.participant_id:participant.id;
+        requireValue(args.participant_id===undefined || args.participant_id===participantId,'reply_participant_mismatch',400);
+        const media=await bridge.media.create(args,participantId);
+        const queued=sessionFields.length?
+          await bridge.messages.reply(sid,lease,args.message_ids as number[],args.idempotency_key as string,'',now,media):
+          await bridge.outbound.send(args.idempotency_key as string,'',now,participantId,media);
+        result=await bridge.replyStatus(queued.reply_id,(args.wait_ms??20_000) as number); break;
+      }
       case 'wechat_heartbeat': result=await bridge.sessions.heartbeat(sid,lease,now); break;
       case 'wechat_end_session': result=await bridge.sessions.end(sid,lease,now); break;
       case 'wechat_read_history': {
@@ -59,6 +72,12 @@ export async function callTool(bridge:Bridge,name:string,args:Record<string,unkn
   } catch(error) {
     if (!(error instanceof BridgeError)) throw error;
     const reasons:Record<string,string>={
+      gateway_media_not_ready:'图片和文件接入服务尚未就绪，请先更新并启动协议 3 接入服务',
+      media_source_required:'请提供 source_url 或 data_base64，且只提供一种文件来源',
+      invalid_source_url:'文件地址须为公网 HTTPS 直接下载链接',
+      invalid_data_base64:'文件内容须使用完整的标准 base64 编码',
+      inline_media_too_large:'直接上传的文件不得超过 512KiB，请使用公网 HTTPS 下载链接',
+      media_session_fields_required:'回复附件需要同时提供 session_id、lease_token 和 message_ids',
       missing_wechat_reply_context:'缺少微信回复上下文，无法发送这条回复',
       wechat_not_bound:'该成员尚未绑定微信，请先扫码绑定',
       participant_required:'请先用 wechat_list_participants 确定成员，并提供 participant_id',
@@ -76,6 +95,6 @@ export async function callTool(bridge:Bridge,name:string,args:Record<string,unkn
     };
     const message=reasons[error.code]??`操作未完成（${error.code}）`;
     return {isError:true,content:[{type:'text',text:message}],structuredContent:{error:error.code,error_message:message,
-      ...(['wechat_send_reply','wechat_send_message'].includes(name)?{status_text:'发送失败'}:{})}};
+      ...(['wechat_send_reply','wechat_send_message','wechat_send_media'].includes(name)?{status_text:'发送失败'}:{})}};
   }
 }

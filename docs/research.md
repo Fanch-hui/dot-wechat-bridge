@@ -28,10 +28,14 @@
 
 [API 实现](https://github.com/Tencent/openclaw-weixin/blob/24de5c9eb0dd5e595d7e2d090ed8a3f82870d42c/src/api/api.ts)和[扫码登录](https://github.com/Tencent/openclaw-weixin/blob/24de5c9eb0dd5e595d7e2d090ed8a3f82870d42c/src/auth/login-qr.ts)提供 `get_bot_qrcode`、`get_qrcode_status`、`getupdates`、`sendmessage`、Bot token、收件游标和回复上下文的实现参考。[协议阅读约定](https://github.com/Tencent/openclaw-weixin/blob/24de5c9eb0dd5e595d7e2d090ed8a3f82870d42c/docs/protocol_zh_CN.md#阅读约定)说明代码不能代表完整服务端契约；扫码准入、上下文有效期和发送条件以腾讯实际响应为准。
 
-长轮询默认 35 秒；消息和游标按成员持久化后确认，uint64 消息 ID 保持字符串。每个成员只接受绑定发送者的私聊，过滤群消息和 Bot 回声。入站支持文本、已有语音转写、图片和文件，出站为文本。
+长轮询默认 35 秒；消息和游标按成员持久化后确认，uint64 消息 ID 保持字符串。每个成员只接受绑定发送者的私聊，过滤群消息和 Bot 回声。入站支持文本、已有语音转写、图片和文件，出站支持文本、图片和文件。
 
 媒体参考[下载实现](https://github.com/Tencent/openclaw-weixin/blob/24de5c9eb0dd5e595d7e2d090ed8a3f82870d42c/src/media/media-download.ts)和 [AES 解密实现](https://github.com/Tencent/openclaw-weixin/blob/24de5c9eb0dd5e595d7e2d090ed8a3f82870d42c/src/cdn/aes-ecb.ts)。Node 下载、解密后将原始字节存到部署者的 R2；Dot 按成员通过附件工具读取，单个附件上限 20 MiB。图片返回 MCP 图片内容，文件使用 [MCP 嵌入资源](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#embedded-resources)返回原始字节。
 
 [主动发送实现](https://github.com/Tencent/openclaw-weixin/blob/24de5c9eb0dd5e595d7e2d090ed8a3f82870d42c/src/channel.ts#L267-L279)和[文本发送函数](https://github.com/Tencent/openclaw-weixin/blob/24de5c9eb0dd5e595d7e2d090ed8a3f82870d42c/src/messaging/send.ts#L58-L126)使用收件人的最近上下文发送。主动工具沿用该行为，目标由明确成员 ID 决定；从未来信时可省略上下文尝试发送，是否接受以上游响应为准。
 
 发送成功以上游响应为依据。超时显示“发送超时”；结果未知不自动重试，避免重复发送。测试证明实现的协议和状态变化，真实微信收件与 Dot 行为由部署者人工验收。
+
+媒体发送依据腾讯提交 `c6643f6f0ac03574eb126f2d69569ea4267cc3c6` 的[上传实现](https://github.com/Tencent/openclaw-weixin/blob/c6643f6f0ac03574eb126f2d69569ea4267cc3c6/src/cdn/upload.ts)、[CDN 上传](https://github.com/Tencent/openclaw-weixin/blob/c6643f6f0ac03574eb126f2d69569ea4267cc3c6/src/cdn/cdn-upload.ts)及[发送函数](https://github.com/Tencent/openclaw-weixin/blob/c6643f6f0ac03574eb126f2d69569ea4267cc3c6/src/messaging/send.ts)。`getuploadurl` 使用原始长度、MD5 和 AES-128-ECB PKCS#7 密文长度，图片媒体类型为 1、文件为 3；CDN 成功须取得 `x-encrypted-param`。发送项中的 `aes_key` 是 hex ASCII 的 base64；图片 `mid_size` 使用密文长度，文件 `len` 是原始字节长度字符串。说明文字与媒体分开入队，避免一次调用部分成功。
+
+出站来源可为公网 HTTPS 直链或最多 512 KiB 原始内容的 base64，总上限 20 MiB 是本项目限制。接入服务对下载地址执行连接时 DNS 校验和 pinning，拒绝私网与重定向；首次取得的 URL 字节存为不可变 R2 快照。媒体在 `preparing` 阶段续租并上传，开始发送前再校验成员和任务租约。发送准备失败可有限重试，实际消息发送结果未知不自动重发。腾讯没有承诺 `client_id` 提供严格的服务端去重，真实格式、账号准入和实际收件仍需人工验收。

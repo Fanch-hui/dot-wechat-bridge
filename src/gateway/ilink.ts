@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ReplyJob } from "../shared/contracts.ts";
 import type { Credentials } from "./storage.ts";
+import { uploadWechatMedia, OutboundMediaError, type UploadResponse } from "./outbound-media.ts";
+
+export interface SendOptions { mediaBytes?: Uint8Array; beforeSend?: () => Promise<void> }
 
 export const ILINK_BASE = "https://ilinkai.weixin.qq.com";
 export function trustedWechatBase(input: string): string {
@@ -91,14 +94,28 @@ export class IlinkClient {
       throw error;
     }
   }
-  async send(payload: ReplyJob["payload"], signal: AbortSignal): Promise<void> {
+  async send(payload: ReplyJob["payload"], signal: AbortSignal, options: SendOptions = {}): Promise<void> {
     if (payload.to_user_id !== this.credentials!.userId) {
       throw new IlinkError("reply_recipient_or_context_invalid", "failed");
     }
+    let item: MessageItem = { type: 1, text_item: { text: payload.text } };
+    if (payload.media) {
+      if (!options.mediaBytes) throw new IlinkError("media_bytes_missing", "failed", "附件内容尚未准备");
+      try {
+        item = await uploadWechatMedia(options.mediaBytes, payload.media.kind, payload.media.name, payload.to_user_id,
+          body => this.call<UploadResponse>(this.credentials!.baseUrl, "ilink/bot/getuploadurl", { ...body, base_info: this.baseInfo() }, 15000, signal), this.request, signal);
+      } catch (error) {
+        if (error instanceof OutboundMediaError) throw new IlinkError(error.code, error.outcome, error.detail);
+        throw error;
+      }
+    }
+    signal.throwIfAborted();
+    await options.beforeSend?.();
+    signal.throwIfAborted();
     await this.call(this.credentials!.baseUrl, "ilink/bot/sendmessage", {
       msg: { from_user_id: "", to_user_id: payload.to_user_id, client_id: payload.client_id,
         message_type: 2, message_state: 2, ...(payload.context_token?{context_token:payload.context_token}:{}),
-        item_list: [{ type: 1, text_item: { text: payload.text } }] }, base_info: this.baseInfo(),
+        item_list: [item] }, base_info: this.baseInfo(),
     }, 15000, signal, true);
   }
   private baseInfo() { return { channel_version: this.version, bot_agent: "DotWechatBridge/0.1.0" }; }

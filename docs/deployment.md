@@ -42,7 +42,7 @@ Sites 为项目提供 App 和私有插件，复用它们，不另建 App。部�
 
 在 ChatGPT 中授权后，部署者以 Site 所有者账号首次调用 `wechat_bridge_status`，登记项目管理身份。首次调用应在只授权该所有者的私有范围内完成。管理网页不自动登记管理员；人员管理仅供该所有者使用。工具请求由 Sites OAuth 和可信 `oai-authenticated-user-id` 标识用户；外部接入 Secret 不代替 MCP 用户身份。不要公开 Site 来绕过授权失败。
 
-重新扫描工具目录，确认 `wechat_list_participants` 及支持 `participant_id` 的工具可用。更新 [Dot 指令](dot-instructions.md)，订阅 `wechat.message.available` 的 `conversation=all`；停止旧 `personal` 订阅实例，避免重复唤醒。第二个微信扫码或恢复启用前要求有效 all 订阅。
+重新扫描工具目录，确认 `wechat_list_participants`、`wechat_send_media` 及支持 `participant_id` 的工具可用。更新 [Dot 指令](dot-instructions.md)，订阅 `wechat.message.available` 的 `conversation=all`；停止旧 `personal` 订阅实例，避免重复唤醒。第二个微信扫码或恢复启用前要求有效 all 订阅。
 
 ## 外部接入配置
 
@@ -64,7 +64,7 @@ Sites 为项目提供 App 和私有插件，复用它们，不另建 App。部�
 
 本机配置/凭据/恢复日志权限 `0600`，运行目录 `0700`；恢复日志包含尚未提交的收件内容，应按私人聊天数据保护。
 
-所有成员共用一个持续运行的协议 2 Node 接入服务和全局网关租约。进程无需入站端口，仅出站 HTTPS；每人独立轮询、游标、恢复日志及发送队列，共用 Sites 心跳和事件回调。暂停它将暂停全部微信接入、订阅验证及事件发送。服务可以在尚无微信绑定时启动，随后通过私有首页逐人扫码。
+所有成员共用一个持续运行的协议 3 Node 接入服务和全局网关租约。进程无需入站端口，仅出站 HTTPS；每人独立轮询、游标、恢复日志及发送队列，共用 Sites 心跳和事件回调。暂停它将暂停全部微信接入、订阅验证及事件发送。服务可以在尚无微信绑定时启动，随后通过私有首页逐人扫码。
 
 Linux 使用 `deployment/gateway.service.example`，在自己管理的主机上安装。构建后将 `dist/gateway/main.js` 安装为 `/opt/dot-wechat-bridge/main.mjs`，项目专用 Node.js 安装在 `/opt/dot-wechat-bridge/node/`，按真实路径调整单元。编译接入仅依赖 Node 内置模块，运行时无需 npm 或 `node_modules`。使用专用 `dot-wechat` 用户及组；JSON 配置放在 `/etc/dot-wechat-bridge/gateway.json`，由该用户拥有且权限为 `0600`；环境文件 `/etc/dot-wechat-bridge/gateway.env` 由 root 拥有且权限为 `0600`。程序读取 JSON 时会设置 `0600`，因此单元对该配置文件单独开放写权限。运行目录固定为 `/var/lib/dot-wechat-bridge`，由服务用户拥有且权限为 `0700`；环境文件中的 `GATEWAY_RUNTIME_DIR` 如存在，也应使用此路径。
 
@@ -118,7 +118,7 @@ macOS 使用 launchd 或已有进程管理器执行 `npm run gateway -- run /etc
 
 保留 D1、R2、`DATA_KEY_B64` 和完整接入运行目录，更新源码、应用新增迁移并发布同一私有 Sites 项目。迁移只调整 schema，通过常量默认值把旧记录归属 `personal`；鉴权后 `Participants.initializeLegacy()` 幂等建立原成员并读取旧绑定及网关游标。不改写旧密文、消息 sequence、任务 ID 或 R2 对象，也不清空数据。
 
-升级顺序为：发布 Worker 与新增迁移 → 更新并重启唯一协议 2 接入服务 → 重新扫描 MCP 工具 → 更新 Dot 指令及 all 订阅 → 在管理首页连接第二人。旧单成员调用保留兼容；成员记录总数超过 1 后，历史、主动发送、恢复和附件读取都必须明确 `participant_id`。
+升级顺序为：发布 Worker 与新增迁移 → 更新并重启唯一协议 3 接入服务 → 重新扫描 MCP 工具 → 更新 Dot 指令及 all 订阅 → 在管理首页连接第二人。旧单成员调用保留兼容；成员记录总数超过 1 后，历史、主动发送、恢复和附件读取都必须明确 `participant_id`。
 
 自己已发布的站点通过 `GET /gateway/main.js` 提供同次构建的接入程序，要求网关 Bearer 认证；私有 Sites 同时要求 `OAI-Sites-Authorization`。下载到候选文件后，核对本机构建的 SHA-256 并运行 Node.js 语法检查，再原子替换 `/opt/dot-wechat-bridge/main.mjs` 并重启接入服务。升级保留配置、凭据和运行目录。
 

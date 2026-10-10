@@ -32,7 +32,7 @@ async function setup(t: TestContext, control: GatewayControl,
     if (custom instanceof Response) return custom;
     if (custom !== undefined) return response(custom);
     if (route === "lease") {
-      assert.equal(body.protocol_version, 2);
+      assert.equal(body.protocol_version, 3);
       return response({ gateway_id: body.gateway_id, lease_token: "test-lease", cursor: "", lease_until: Date.now() + 30000 });
     }
     if (route === "control") return response(control);

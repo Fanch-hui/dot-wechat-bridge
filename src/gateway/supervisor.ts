@@ -44,7 +44,7 @@ export class GatewaySupervisor {
       const legacy = await this.readCredentials(join(this.config.runtimeDir, "wechat-credentials.json"));
       if (legacy) await this.bridge.post("bind", { sender: legacy.userId, bot_id: legacy.botId }, combined);
       this.lease = await this.bridge.post<GatewayLease>("lease", {
-        gateway_id: this.journal.data.gatewayId, protocol_version: 2 }, combined);
+        gateway_id: this.journal.data.gatewayId, protocol_version: 3 }, combined);
       await this.sync(combined);
       await Promise.all([this.tick(combined), this.jobs.run(combined)]);
     } finally {

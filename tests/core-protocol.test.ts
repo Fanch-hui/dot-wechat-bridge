@@ -9,7 +9,11 @@ test('real Worker supports MCP 2 discovery, event catalog, headers and v1 initia
   assert.deepEqual(discovery.body.result.capabilities, { tools: {}, events: {}, resources: {} });
   assert.equal((await c.rpc('events/list')).body.result.events[0].name, 'wechat.message.available');
   const tools = (await c.rpc('tools/list')).body.result.tools;
-  assert.equal(tools.length, 12);
+  assert.equal(tools.length, 13);
+  const media = tools.find((tool: any) => tool.name === 'wechat_send_media');
+  assert.deepEqual(media.inputSchema.required, ['kind', 'name', 'idempotency_key']);
+  assert.equal(media.annotations.idempotentHint, true);
+  assert.equal(media.annotations.readOnlyHint, false);
   const proactive = tools.find((tool: any) => tool.name === 'wechat_send_message');
   assert.deepEqual(proactive.inputSchema.required, ['text', 'idempotency_key']);
   assert.deepEqual(Object.keys(proactive.inputSchema.properties).sort(), ['idempotency_key', 'participant_id', 'text', 'wait_ms']);

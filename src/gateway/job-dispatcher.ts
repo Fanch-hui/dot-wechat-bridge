@@ -1,6 +1,7 @@
 import type { GatewayAuth, GatewayJob, JobResult, ReplyJob } from "../shared/contracts.ts";
 import { deliverWebhook } from "./callback.ts";
 import { Journal } from "./storage.ts";
+import { BridgeHttpError } from "./bridge.ts";
 import { delay, type BridgePort } from "./multi-contracts.ts";
 import type { ParticipantRuntime } from "./participant-runtime.ts";
 
@@ -40,7 +41,12 @@ export class JobDispatcher {
     }
   }
   private async ack(result: JobResult, signal: AbortSignal): Promise<void> {
-    await this.bridge.post("complete", { ...this.auth(), ...result }, signal);
+    try { await this.bridge.post("complete", { ...this.auth(), ...result }, signal); }
+    catch (error) {
+      if (!(error instanceof BridgeHttpError && error.status === 409 && error.code === "job_claim_invalid")) throw error;
+      // A reclaimed job belongs to its new claim; the old result cannot change it.
+      this.report("Gateway job claim expired; server state retained.");
+    }
     delete this.journal.data.jobs[result.job_id];
     await this.journal.save();
   }
@@ -68,9 +74,9 @@ export class JobDispatcher {
       result = { job_id: job.id, claim_token: job.claim_token, outcome: "retryable",
         error_code: "participant_unavailable", error_message: "成员已停用或微信连接尚未就绪" };
     } else {
-      record.started = true;
-      await this.journal.save();
-      result = job.kind === "webhook" ? await this.webhook(job) : await participant!.send(job, signal);
+      const started = async () => { record.started = true; await this.journal.save(); };
+      if (job.kind === "webhook" || !job.payload.media) await started();
+      result = job.kind === "webhook" ? await this.webhook(job) : await participant!.send(job, signal, started);
     }
     record.result = result;
     await this.journal.save();

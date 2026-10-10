@@ -1,6 +1,6 @@
 # 接入同一个 Dot
 
-安装并授权自己部署的私有 Sites 插件，由所有者先调用 `wechat_bridge_status` 登记管理身份。工具更新后重新扫描目录，确认有 `wechat_list_participants`；接入服务需在订阅前保持运行。
+安装并授权本项目的私有 Sites 插件，由所有者先调用 `wechat_bridge_status` 登记管理身份。工具更新后重新扫描目录，确认有 `wechat_list_participants` 和 `wechat_send_media`；接入服务需在订阅前保持运行，媒体发送使用协议 3 接入。
 
 向已有 Dot 发出请求：
 
@@ -22,7 +22,7 @@ ChatGPT 提供 HTTPS 回调及签名 secret，并完成 challenge 验证，无�
 4. 调用 wechat_read_messages，按该会话 messages 的 sequence 从小到大逐条处理。message_ids 使用对应来信的 sequence 数字，不使用 upstream_id。先完成队首消息，再处理该人的下一条。不同人的会话独立处理。
 5. wechat_send_reply 根据 session_id、lease_token 和 message_ids 自动确定收件人，不传自行指定的收件人，不混入其他成员的序号。一条来信可以多次独立回复：先发送“我查一下”，查完再发送结果。保存原 sequence，各次用相同 message_ids，每条新输出用新的 idempotency_key。首次发送移出来信待处理队列，但不结束会话。
 6. 原输出调用丢失或仍等待发送时，保留原 idempotency_key、message_ids 和完全相同的 text 查询，不换 key 重发。可指定 wait_ms:20000 等待，或用 0 不等待。
-7. delivered 才表示已发送；ready/sending 表示尚未确认。根据 status_text 和 error_message 如实报告：发送超时直接显示“发送超时”，失败显示具体原因。unknown 不自动重试。failed/unknown 阻塞该成员后续发件；向该成员报告，并请其检查微信实际收件，不阻塞其他成员的工作。
+7. delivered 才表示已发送；ready/preparing/sending 表示尚未确认。根据 status_text 和 error_message 如实报告：发送超时直接显示“发送超时”，失败显示具体原因。unknown 不自动重试。failed/unknown 阻塞该成员后续发件；向该成员报告，并请其检查微信实际收件，不阻塞其他成员的工作。
 8. 仅在明确指示后调用 wechat_resolve_reply 进行 retry 或 skip；unknown 的 retry 需先明确接受可能重复发送，再传 accept_duplicate_risk:true。保留原输出归属。
 9. 处理、查资料和等待工具期间，每 30 秒为对应 session_id 和 lease_token 调用 wechat_heartbeat。心跳不延长没有新消息的空闲期。不能仅因发出一条回复就结束会话。
 10. 当前工作做完后继续 wechat_read_messages，用领取结果的 read_wait_ms 短等待。空结果且 should_end:false 时继续读取和心跳，同一次唤醒处理多轮。
@@ -33,12 +33,15 @@ ChatGPT 提供 HTTPS 回调及签名 secret，并完成 challenge 验证，无�
 
 主动联系成员：先从当前可信上下文或 wechat_list_participants 确定目标，再调用 wechat_send_message，传 participant_id、text、新的 idempotency_key 和可选 wait_ms。无需领取会话。原输出重试保留成员 ID、key 和正文；状态及未知结果沿用上述规则。
 
+发送图片和文件：调用 wechat_send_media，明确 kind（image 或 file）、name 和新的 idempotency_key。提供接入服务器可直接下载的公网 HTTPS source_url，或不超过 512 KiB 原始字节的标准 data_base64，两种来源只能选一种；单个媒体上限 20 MiB。图片使用 PNG、JPEG、GIF、WebP，其他格式可作为 file。不能把 sandbox: 链接、电脑本地路径或网页预览链接当作文件直链，不能编造文件内容。
+作为当前来信的回复时，传 session_id、lease_token、message_ids，服务端推导收件人；主动发送时传 participant_id。媒体和说明文字分别发送，用不同 key。重试保留原目标、key、文件名、kind 和来源参数，查询原任务结果；preparing 表示准备或上传中，delivered 才表示已发送，unknown 沿用人工确认规则。gateway_media_not_ready 表示接入服务尚未升级或离线，不改发其他成员。
+
 不要显示 lease_token、微信凭据、context_token、签名 secret 或授权头。工具明确失败时，不声称已发送或已完成。
 ```
 
 ## 工具和订阅维护
 
-历史读取、主动发送、会话恢复和附件读取仅在成员记录总数为 1 时允许省略 `participant_id`。多人时缺目标返回 `participant_required`；停用或未绑定成员仍计入记录总数。建议始终传成员 ID。
+历史读取、主动发送（文字或媒体）、会话恢复和附件读取仅在成员记录总数为 1 时允许省略 `participant_id`。多人时缺目标返回 `participant_required`；停用或未绑定成员仍计入记录总数。建议始终传成员 ID。
 
 主动发送复用目标成员最近的微信上下文，与该人的普通回复共用队列，不改变来信状态；历史以 `purpose: "send"` 标记。从未来信时尝试省略上下文，是否接受以微信返回为准。
 

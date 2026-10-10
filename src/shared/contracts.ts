@@ -11,6 +11,18 @@ export interface IncomingMessage {
 }
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_INLINE_MEDIA_BYTES = 512 * 1024;
+export interface StoredMedia {
+  key: string;
+  size: number;
+  sha256: string;
+}
+export interface OutgoingMedia {
+  kind: "image" | "file";
+  name: string;
+  source: { type: "url"; url: string } | ({ type: "stored" } & StoredMedia);
+  cached?: StoredMedia;
+}
 export interface Attachment {
   id: string;
   item_index: number;
@@ -52,7 +64,7 @@ export interface ReplyJob {
   id: string;
   claim_token: string;
   kind: "reply";
-  payload: { client_id: string; to_user_id: string; text: string; context_token?: string };
+  payload: { client_id: string; to_user_id: string; text: string; context_token?: string; media?: OutgoingMedia };
 }
 
 export interface WebhookJob {

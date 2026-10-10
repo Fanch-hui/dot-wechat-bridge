@@ -9,7 +9,7 @@ interface GatewayRow {gateway_id:string;lease_hash:string;lease_until:number;cur
 export class GatewayControl {
   constructor(readonly db: Database, readonly cfg: Config) {}
   async acquire(id: string, now: number, version=1): Promise<GatewayLease> {
-    requireValue(version===1 || version===2,"gateway_protocol_invalid",400);
+    requireValue(version===1 || version===2 || version===3,"gateway_protocol_invalid",400);
     const secret=token();
     const update=await this.db.run(`INSERT INTO gateway(id,gateway_id,lease_hash,lease_until,protocol_version)
       VALUES('personal',?,?,?,?) ON CONFLICT(id) DO UPDATE SET gateway_id=excluded.gateway_id,

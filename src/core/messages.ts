@@ -3,9 +3,10 @@ import { Vault, hash } from "./security.ts";
 import { Sessions } from "./sessions.ts";
 import { Message, Job } from "./models.ts";
 import { pause, requireValue } from "./errors.ts";
-import { IncomingMessage } from "../shared/contracts.ts";
+import { IncomingMessage, OutgoingMedia, ReplyJob } from "../shared/contracts.ts";
 import { Attachments } from "./attachments.ts";
 import { messageView } from "./message-view.ts";
+import { sameOutput, requireMediaGateway } from "./outgoing-media.ts";
 
 export class Messages {
   constructor(readonly db: Database, readonly vault: Vault, readonly sessions: Sessions, readonly attachments: Attachments) {}
@@ -58,25 +59,26 @@ export class Messages {
       await pause(Math.min(500,deadline-now));
     }
   }
-  async reply(sessionId: string, lease: string, ids: number[], key: string, text: string, now: number) {
+  async reply(sessionId: string, lease: string, ids: number[], key: string, text: string, now: number, media?:OutgoingMedia) {
     const session=await this.sessions.authorize(sessionId,lease,now), participantId=session.participant_id;
     requireValue(ids.length>0 && ids.length<=32 && ids.every((id,i)=>Number.isSafeInteger(id) && id>0 &&
       (i===0 || id>ids[i-1])),"invalid_message_ids",400);
     const jobId="reply_"+(await hash(participantId==='personal'?key:JSON.stringify([participantId,key]))).replaceAll(/[+/=]/g,"");
     const existing=await this.db.one<Job>("SELECT * FROM jobs WHERE id=?", [jobId]);
-    if (existing) return this.checkReply(existing,ids,text);
+    if (existing) return this.checkReply(existing,ids,text,media);
+    if (media) await requireMediaGateway(this.db,now);
     const rows=await this.replyMessages(ids,sessionId,participantId), last=rows.at(-1)!;
     const context=await this.vault.open<string>(last.context_cipher);
     requireValue(context,"missing_wechat_reply_context");
-    const payload=await this.vault.seal({client_id:jobId,to_user_id:last.sender,text,context_token:context});
+    const payload=await this.vault.seal({client_id:jobId,to_user_id:last.sender,text,context_token:context,...(media?{media}:{})});
     await this.enqueueReply(jobId,sessionId,await hash(lease),ids,payload,now,participantId);
     const job=await this.db.one<Job>("SELECT * FROM jobs WHERE id=?", [jobId]);
     requireValue(job,"concurrent_reply_conflict");
-    return this.checkReply(job,ids,text);
+    return this.checkReply(job,ids,text,media);
   }
-  private async checkReply(job: Job, ids: number[], text: string) {
-    const saved=await this.vault.open<{text:string}>(job.payload_cipher);
-    requireValue(saved.text===text && job.message_ids===JSON.stringify(ids),"idempotency_conflict");
+  private async checkReply(job: Job, ids: number[], text: string, media?:OutgoingMedia) {
+    const saved=await this.vault.open<ReplyJob['payload']>(job.payload_cipher);
+    requireValue(sameOutput(saved,text,media) && job.message_ids===JSON.stringify(ids),"idempotency_conflict");
     return {reply_id:job.id,status:job.state};
   }
   private async replyMessages(ids: number[], sessionId: string, participantId: string) {

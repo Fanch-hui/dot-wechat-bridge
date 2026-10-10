@@ -35,6 +35,15 @@ export async function gateway(request:Request,env:Env,path:string) {
   authorizeGateway(request,env);
   const bridge=new Bridge(env),now=Date.now();
   await bridge.participants.initializeLegacy();
+  if(path==='/gateway/media-cache') {
+    const id=string(request.headers.get('X-Bridge-Gateway-Id'),'gateway_id',128);
+    const lease=string(request.headers.get('X-Bridge-Lease'),'lease_token',128);
+    await bridge.gateway.authorize(id,lease,now);
+    requireValue(request.headers.get('Content-Type')==='application/octet-stream','binary_required',415);
+    const job=string(request.headers.get('X-Bridge-Job-Id'),'job_id',256);
+    const claim=string(request.headers.get('X-Bridge-Claim-Token'),'claim_token',128);
+    return bridge.media.cache(id,job,claim,await bodyBytes(request,MAX_ATTACHMENT_BYTES),Date.now());
+  }
   if(path==='/gateway/attachment') {
     const id=string(request.headers.get('X-Bridge-Gateway-Id'),'gateway_id',128);
     const lease=string(request.headers.get('X-Bridge-Lease'),'lease_token',128);
@@ -75,6 +84,12 @@ export async function gateway(request:Request,env:Env,path:string) {
       requireValue(Number.isSafeInteger(limit) && limit>=1 && limit<=16,'invalid_limit',400);
       return {jobs:await bridge.queue.claim(id,limit,now)};
     }
+    case '/gateway/job-heartbeat':
+      return bridge.queue.heartbeat(id,string(input.job_id,'job_id',256),string(input.claim_token,'claim_token',128),now);
+    case '/gateway/start-send':
+      return bridge.queue.startSend(id,string(input.job_id,'job_id',256),string(input.claim_token,'claim_token',128),now);
+    case '/gateway/media-download':
+      return bridge.media.download(id,string(input.job_id,'job_id',256),string(input.claim_token,'claim_token',128),now);
     case '/gateway/complete': {
       string(input.job_id,'job_id',256);string(input.claim_token,'claim_token',128);
       requireValue(input.error_code===undefined || (typeof input.error_code==='string' && /^[a-zA-Z0-9_-]{1,128}$/.test(input.error_code)),

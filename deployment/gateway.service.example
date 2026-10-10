@@ -1,0 +1,25 @@
+[Unit]
+Description=Dot WeChat Bridge gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dot-wechat
+Group=dot-wechat
+WorkingDirectory=/opt/dot-wechat-bridge
+Environment=GATEWAY_RUNTIME_DIR=/var/lib/dot-wechat-bridge
+EnvironmentFile=/etc/dot-wechat-bridge/gateway.env
+ExecStart=/opt/dot-wechat-bridge/node/bin/node /opt/dot-wechat-bridge/main.mjs run /etc/dot-wechat-bridge/gateway.json
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dot-wechat-bridge /etc/dot-wechat-bridge/gateway.json
+
+[Install]
+WantedBy=multi-user.target

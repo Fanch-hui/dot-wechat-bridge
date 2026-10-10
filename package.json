@@ -1,0 +1,38 @@
+{
+  "name": "dot-wechat-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "overrides": {
+    "undici": "^7.29.1",
+    "sharp": "^0.35.5",
+    "esbuild": "$esbuild"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "build": "node scripts/build.mjs",
+    "db:generate": "drizzle-kit generate",
+    "gateway": "tsx src/gateway/main.ts",
+    "dev": "tsx scripts/dev.ts"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "standardwebhooks": "^1.1.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261008.1",
+    "@types/node": "^26.6.4",
+    "@types/qrcode": "^1.5.6",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.4",
+    "esbuild": "^0.28.2",
+    "miniflare": "^4.20260730.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT"
+}

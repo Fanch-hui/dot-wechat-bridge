@@ -1,0 +1,7 @@
+{
+  "bridgeUrl": "https://your-site.example.invalid",
+  "runtimeDir": "/var/lib/dot-wechat-bridge",
+  "tickMs": 1000,
+  "qrRefreshLimit": 3,
+  "qrTimeoutMs": 300000
+}

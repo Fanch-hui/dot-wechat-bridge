@@ -1,0 +1,1 @@
+ALTER TABLE `jobs` ADD `is_final` integer DEFAULT 1 NOT NULL;

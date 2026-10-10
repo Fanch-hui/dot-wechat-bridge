@@ -1,0 +1,1 @@
+ALTER TABLE `jobs` ADD `error_message` text;

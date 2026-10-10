@@ -1,0 +1,32 @@
+const session={session_id:{type:'string',minLength:1,maxLength:128},lease_token:{type:'string',minLength:1,maxLength:128}};
+const participant={participant_id:{type:'string',minLength:1,maxLength:128}};
+const definition=(name:string,description:string,properties:Record<string,unknown>,required:string[],readOnly=false)=>({
+  name,description,inputSchema:{type:'object',properties,required,additionalProperties:false},
+  annotations:{readOnlyHint:readOnly,destructiveHint:false,idempotentHint:!['wechat_recover_session','wechat_resolve_reply'].includes(name),openWorldHint:!readOnly},
+});
+export const tools=[
+  definition('wechat_bridge_status','读取绑定、活动会话及投递异常状态。首次本人连接时登记 Site 所有者。',{},[],true),
+  definition('wechat_list_participants','列出稳定成员 ID、管理员设置的称呼及连接状态；多人主动发送和历史读取必须明确成员。',{},[],true),
+  definition('wechat_confirm_session','用本次任务独有 consumer_id 确认并领取事件的会话，获得后续调用租约。',
+    {session_id:session.session_id,consumer_id:{type:'string',minLength:1,maxLength:128}},['session_id','consumer_id']),
+  definition('wechat_read_messages','按顺序读取待处理消息，attachments 包含微信原始图片或文件；使用其 id 调用 wechat_read_attachment 取得实际内容。可短等待后续微信消息；收到 should_end 后尝试结束会话。',
+    {...session,wait_ms:{type:'integer',minimum:0,maximum:25000}},['session_id','lease_token'],true),
+  definition('wechat_read_attachment','读取微信附件原文件。图片返回原始图片内容；PDF、Word、Excel、PPT、文本及其他文件返回保留原始字节的文件资源，由你自行读取。attachment_id 使用消息或历史中 attachments 的 id。',
+    {...participant,attachment_id:{type:'string',minLength:1,maxLength:128}},['attachment_id'],true),
+  definition('wechat_send_reply','将独立回复加入当前会话成员的微信有序发件队列。同一来信在当前有效会话可多次回复，沿用原 message_ids；首次回复按待处理顺序。每条新回复用新 idempotency_key，重试复用原 key、message_ids 和 text。',
+    {...session,message_ids:{type:'array',items:{type:'integer',minimum:1},minItems:1,maxItems:32},
+      text:{type:'string',minLength:1,maxLength:8000},idempotency_key:{type:'string',minLength:1,maxLength:128},
+      wait_ms:{type:'integer',minimum:0,maximum:25000}},
+    ['session_id','lease_token','message_ids','text','idempotency_key']),
+  definition('wechat_send_message','主动发送文本到指定成员微信，多人模式必须提供 participant_id，无需来信 ID、会话或租约。自动复用已有微信上下文。每条新消息用新 idempotency_key，重试复用原 key 和 text；返回发送状态，结果未知时不得自动重发。',
+    {...participant,text:{type:'string',minLength:1,maxLength:8000},idempotency_key:{type:'string',minLength:1,maxLength:128},
+      wait_ms:{type:'integer',minimum:0,maximum:25000}},['text','idempotency_key']),
+  definition('wechat_heartbeat','延长当前处理租约；长时间思考期间每30秒调用。心跳不重置无新消息的空闲计时。',session,['session_id','lease_token']),
+  definition('wechat_end_session','空闲时结束当前会话；若刚收到新消息，返回 ended:false，继续读取。',session,['session_id','lease_token']),
+  definition('wechat_read_history','读取指定成员的近期微信对话及回复状态。多人模式必须提供 participant_id；默认按当前成员恢复上下文，跨人协作时明确来源。',
+    {...participant,before_sequence:{type:'integer',minimum:1},limit:{type:'integer',minimum:1,maximum:50}},[],true),
+  definition('wechat_recover_session','在唤醒失败或处理租约过期后，为持久化的待处理消息重新开启唤醒，多人模式必须提供 participant_id。',participant,[]),
+  definition('wechat_resolve_reply','仅在用户明确指示后处理失败或结果未知的回复。未知结果重试必须用户确认可能重复发送；skip 放行后续队列。',
+    {reply_id:{type:'string',minLength:1,maxLength:128},action:{type:'string',enum:['retry','skip']},
+      accept_duplicate_risk:{type:'boolean'}},['reply_id','action']),
+];

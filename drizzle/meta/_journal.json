@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1791485982884,
+      "tag": "0000_modern_leech",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791486404891,
+      "tag": "0001_glossy_zarek",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791491386722,
+      "tag": "0002_clever_warbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791492224310,
+      "tag": "0003_multiple_replies",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791557039122,
+      "tag": "0004_long_skrulls",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791616056525,
+      "tag": "0005_romantic_millenium_guard",
+      "breakpoints": true
+    }
+  ]
+}

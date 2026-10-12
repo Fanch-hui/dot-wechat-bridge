@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage as HttpMessage } from "node:http";
+import { createServer as createTcpServer, type Socket } from "node:net";
+import { channel } from "node:diagnostics_channel";
 import { once } from "node:events";
+import { Agent } from "undici";
 import { IlinkClient, IlinkError, inboundMessages, parseIlinkJson, trustedWechatBase } from "../src/gateway/ilink.ts";
 import { bindWechat } from "../src/gateway/bind.ts";
 
@@ -112,6 +115,38 @@ test("lossless parser preserves strings and IDs; allowlist excludes groups and e
     assert.throws(() => trustedWechatBase(url));
   }
   assert.equal(trustedWechatBase("ilinkai.weixin.qq.com"), "https://ilinkai.weixin.qq.com");
+});
+
+test("TLS connection timeout before request write is retryable", async t => {
+  const sockets = new Set<Socket>();
+  let handshakeBytes = 0, requestsWritten = 0;
+  const server = createTcpServer(socket => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    socket.on("data", bytes => { handshakeBytes += bytes.length; });
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const port = (server.address() as { port: number }).port;
+  const agent = new Agent({ connect: { timeout: 100 } });
+  const sendHeaders = channel("undici:client:sendHeaders");
+  const countRequest = (message: unknown) => {
+    if ((message as { socket: Socket }).socket.remotePort === port) requestsWritten++;
+  };
+  sendHeaders.subscribe(countRequest);
+  t.after(async () => {
+    sendHeaders.unsubscribe(countRequest);
+    await agent.destroy();
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  });
+  const transport: typeof fetch = (_input, init) => fetch(`https://127.0.0.1:${port}/`,
+    { ...init, dispatcher: agent } as RequestInit & { dispatcher: Agent });
+  const client = new IlinkClient({ baseUrl: "https://ilinkai.weixin.qq.com", userId: "owner", botId: "bot", botToken: "test" }, undefined, transport);
+  await assert.rejects(client.send({ client_id: "stable", to_user_id: "owner", text: "hello" }, new AbortController().signal),
+    (error: unknown) => error instanceof IlinkError && error.code === "ilink_connect_timeout"
+      && error.outcome === "retryable" && error.detail === "微信连接超时（UND_ERR_CONNECT_TIMEOUT）");
+  assert.ok(handshakeBytes > 0);
+  assert.equal(requestsWritten, 0);
 });
 
 test("reply transport loss remains unknown; explicit credential expiry is failed", async t => {

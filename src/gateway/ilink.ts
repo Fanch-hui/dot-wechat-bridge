@@ -152,8 +152,12 @@ export class IlinkClient {
     } catch (error) {
       if (error instanceof IlinkError) throw error;
       const fault = error as { name?: string; cause?: { code?: string }; code?: string };
-      const timedOut = fault.name === "TimeoutError" || fault.code === "ETIMEDOUT" || fault.cause?.code === "ETIMEDOUT";
       const transportCode = fault.cause?.code ?? fault.code;
+      // Undici has not written the HTTP request before TCP/TLS connection succeeds.
+      if (transportCode === "UND_ERR_CONNECT_TIMEOUT") {
+        throw new IlinkError("ilink_connect_timeout", "retryable", "微信连接超时（UND_ERR_CONNECT_TIMEOUT）");
+      }
+      const timedOut = fault.name === "TimeoutError" || fault.code === "ETIMEDOUT" || fault.cause?.code === "ETIMEDOUT";
       const detail = timedOut ? "发送超时" : `微信网络请求失败${transportCode && /^[A-Z0-9_]{1,40}$/.test(transportCode) ? `（${transportCode}）` : ""}`;
       throw new IlinkError(timedOut ? (sending?"send_timeout":"ilink_timeout") : "ilink_transport_error", sending ? "unknown" : "retryable", detail);
     }

@@ -51,6 +51,35 @@ test('an unknown send blocks only its own member and disabled queues retain thei
   const next=await c.jobs();assert.equal(next.length,1);assert.equal(next[0].id,b.reply_id);
 });
 
+test('proactive claims and explicit retries use the latest context of their member',async t=>{
+  const c=await fixture(t);await c.start();await second(c);
+  await c.ingest([message('first')],'p1');
+  const args={participant_id:'personal',idempotency_key:'reminder',text:'提醒',wait_ms:0};
+  const queued=await c.ok('wechat_send_message',args);
+  await c.ingest([message('newer')],'p2','p1');
+  const foreign=await c.service('ingest',{participant_id:'other',
+    messages:[message('foreign','乙',{sender:'other-wechat',context_token:'foreign-context'})],cursor:'o1',previous_cursor:''});
+  assert.equal(foreign.status,200);
+  let [job]=await c.jobs();
+  assert.equal(job.kind,'reply');if(job.kind!=='reply') throw new Error('expected reply');
+  assert.equal(job.id,queued.reply_id);
+  assert.equal(job.payload.context_token,'context newer');
+  const {context_token,...original}=job.payload;
+  await c.complete(job,{outcome:'failed',error_code:'ilink_error_-2',error_message:'微信请求失败（-2）：prepare failed'});
+  await c.ingest([message('recovery')],'p3','p2');
+  await c.ok('wechat_resolve_reply',{reply_id:job.id,action:'retry'});
+  [job]=await c.jobs();
+  assert.equal(job.kind,'reply');if(job.kind!=='reply') throw new Error('expected reply');
+  assert.equal(job.id,queued.reply_id);
+  assert.equal(job.payload.context_token,'context recovery');
+  const {context_token:retryContext,...retried}=job.payload;
+  assert.deepEqual(retried,original);
+  assert.deepEqual(await c.rows("SELECT message_ids FROM jobs WHERE kind='reply'"),[{message_ids:'[1]'}]);
+  await c.complete(job);
+  assert.equal((await c.ok('wechat_send_message',args)).status,'delivered');
+  assert.equal((await c.jobs()).length,0);
+});
+
 test('schema upgrade preserves old sequences, encrypted payloads, live session, cursor and R2 objects',async t=>{
   const c=await fixture(t,{},false,'0004');const now=Date.now();
   await c.run("INSERT INTO settings(key,value) VALUES('owner',?),('sender','self-wechat')",[await hash('owner')]);

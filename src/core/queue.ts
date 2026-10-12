@@ -47,6 +47,12 @@ export class Queue {
     for (const row of rows) {
       const reply=row.kind==='reply'?await this.vault.open<ReplyJob['payload']>(row.payload_cipher):null;
       if (reply?.media && (gateway?.protocol_version??1)<3) continue;
+      if (reply && row.purpose==='send') {
+        const latest=await this.db.one<{context_cipher:string}>(
+          'SELECT context_cipher FROM messages WHERE participant_id=? ORDER BY sequence DESC LIMIT 1',
+          [row.participant_id??'personal']);
+        if (latest) reply.context_token=await this.vault.open<string>(latest.context_cipher);
+      }
       const state=reply?.media?'preparing':'sending';
       const claimToken=token();
       const update=await this.db.run(`UPDATE jobs SET state=?,attempts=attempts+1,claim_hash=?,claim_until=?,gateway_id=?
